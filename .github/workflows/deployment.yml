@@ -41,6 +41,40 @@ jobs:
             ${{ steps.image-name.outputs.sha-tag }}
             ${{ steps.image-name.outputs.image }}:latest
 
+  build-executable:
+    name: Build example Windows executable
+    needs: build-image
+    runs-on: windows-latest
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements-release.txt
+
+      - name: Install release dependencies
+        run: python -m pip install -r requirements-release.txt
+
+      - name: Package example executable
+        shell: pwsh
+        run: |
+          pyinstaller --noconfirm --clean --onefile `
+            --name MaterialsCalculator `
+            --collect-all streamlit `
+            --add-data "src;src" `
+            release/windows_launcher.py
+
+      - name: Save executable as workflow artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: MaterialsCalculator-Windows
+          path: dist/MaterialsCalculator.exe
+          if-no-files-found: error
+
   deploy-staging:
     name: Deploy to staging
     needs: build-image
@@ -106,3 +140,33 @@ jobs:
           echo "Would deploy ${{ needs.build-image.outputs.sha-tag }} to production."
           # Replace this step with the real deployment command. Keep using the
           # commit-specific tag above so production receives the tested image.
+
+  publish-release:
+    name: Publish executable on GitHub Release
+    needs: [build-executable, deploy-production]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download executable artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: MaterialsCalculator-Windows
+          path: release-assets
+
+      - name: Create release or attach executable
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          if gh release view "${RELEASE_TAG}" > /dev/null 2>&1; then
+            gh release upload "${RELEASE_TAG}" \
+              "release-assets/MaterialsCalculator.exe#Materials Calculator for Windows" \
+              --clobber
+          else
+            gh release create "${RELEASE_TAG}" \
+              "release-assets/MaterialsCalculator.exe#Materials Calculator for Windows" \
+              --verify-tag \
+              --generate-notes \
+              --title "Materials Calculator ${RELEASE_TAG}"
+          fi

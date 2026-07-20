@@ -10,8 +10,10 @@ The repository is designed for a 90-minute introductory session for material sci
 .
 ├── .github/workflows/
 │   ├── ci.yml                 # Checks every pull request and main-branch push
-│   └── deployment.yml         # Publishes and promotes a Docker image
+│   └── deployment.yml         # Publishes an image and Windows release asset
 ├── .streamlit/config.toml     # Server address, port, and headless mode
+├── release/
+│   └── windows_launcher.py    # Entry point for the demonstration .exe
 ├── src/
 │   ├── __init__.py
 │   ├── app.py                 # Streamlit interface only
@@ -22,6 +24,7 @@ The repository is designed for a 90-minute introductory session for material sci
 ├── Dockerfile
 ├── pyproject.toml             # Package and tool configuration
 ├── requirements.txt           # Runtime dependencies
+├── requirements-release.txt   # Windows executable build dependencies
 └── requirements-dev.txt       # Test and analysis dependencies
 ```
 
@@ -110,6 +113,7 @@ Alternatively, create and publish a release from the GitHub **Releases** page an
 - **Deploy to staging** selects the `staging` environment and clearly prints the image a real hosting command would deploy. It is intentionally a placeholder, not a real deployment.
 - **Staging smoke test** pulls and starts that published commit-specific image on the runner. This simulates post-deployment validation because the example has no staging URL.
 - **Deploy to production** selects the protected `production` environment and promotes the exact SHA-tagged image that passed staging. It does not rebuild the image. This is also an explicitly labelled placeholder.
+- **Publish executable** downloads the Windows executable built with PyInstaller and attaches it to the tag's GitHub Release. If the Release page already exists, the workflow adds the file to it; otherwise, it creates the Release page automatically.
 
 The GHCR package may initially be private. The workflow can pull it using its automatic token; adjust the package visibility in the repository or organization settings if people should pull it anonymously.
 
@@ -119,9 +123,9 @@ The GHCR package may initially be private. The workflow can pull it using its au
 - **Event (trigger):** repository activity that starts a workflow, such as a pull request, push, or manual `workflow_dispatch`.
 - **Job:** a group of steps that runs on one fresh runner. Jobs can depend on one another with `needs`.
 - **Step:** one named command or reusable action within a job. Steps share that job's checked-out files and runner.
-- **Runner:** the temporary machine that executes a job; this project uses GitHub-hosted Ubuntu runners.
+- **Runner:** the temporary machine that executes a job; this project uses GitHub-hosted Ubuntu and Windows runners.
 - **Action:** a reusable automation component, such as `actions/checkout`, referenced with `uses`.
-- **Artifact:** a file produced by automation and retained or passed onward. The Docker image in GHCR is a durable build output; GitHub's `upload-artifact` action is not needed here.
+- **Artifact:** a file produced by automation and retained or passed onward. The executable is first stored as a workflow artifact so another job can attach it to the longer-lived GitHub Release.
 - **Environment:** a named deployment target such as `staging` or `production`. It can hold protection rules, reviewers, variables, and environment-scoped secrets.
 - **Secret:** an encrypted value exposed only to selected workflow steps. Never commit passwords or tokens. This example needs no user-created secrets because GitHub supplies `GITHUB_TOKEN`.
 
@@ -146,7 +150,9 @@ No deployment credentials belong in this teaching repository. If real infrastruc
 - **Docker image** is an immutable filesystem and startup definition containing Python, dependencies, configuration, and source code.
 - **Running deployment** is a started instance of that image on infrastructure, with networking, configuration, monitoring, and a reachable URL.
 
-Streamlit applications are normally delivered as source plus dependencies or as a Docker image, then run as a web service. They are not normally distributed as `.exe` files: users interact through a browser, the server must keep running, and container deployment preserves the Python/runtime environment consistently across machines. Desktop bundling tools exist, but an executable would obscure the web-service deployment lesson and still require special handling for the Streamlit server.
+Streamlit applications are normally delivered as source plus dependencies or as a Docker image, then run as a web service. They are not normally distributed as `.exe` files: users interact through a browser, the server must keep running, and container deployment preserves the Python/runtime environment consistently across machines.
+
+For demonstration purposes, this repository also uses PyInstaller on a Windows runner to create `MaterialsCalculator.exe`. Starting it launches a local Streamlit server at <http://localhost:8501>; closing its console stops the server. The executable is intentionally a teaching artifact rather than the production deployment. It is Windows-only, relatively large because it bundles Python and Streamlit, and may trigger normal warnings for unsigned executables downloaded from the internet.
 
 ## End-to-end pipeline
 
@@ -161,6 +167,7 @@ flowchart TD
     Staging --> Smoke[Staging smoke test]
     Smoke --> Approval[Production approval]
     Approval --> Production[Deploy to production]
+    Production --> Release[Publish Windows executable on GitHub Release]
 ```
 
 A useful 90-minute lesson is: 15 minutes for the app and repository, 25 minutes for tests and static checks, 20 minutes for the CI jobs and `needs`, 20 minutes for Docker and staged deployment, and 10 minutes for a deliberate failure and questions.
