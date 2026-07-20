@@ -93,7 +93,18 @@ Although Python is interpreted, compilation, import, packaging, and runtime chec
 
 ## Deployment workflow
 
-[`.github/workflows/deployment.yml`](.github/workflows/deployment.yml) runs after a push to `main`, or manually from **Actions → Build and deploy → Run workflow**.
+[`.github/workflows/deployment.yml`](.github/workflows/deployment.yml) runs only when a version tag matching `v*` is pushed, such as `v1.0.0`. Ordinary pushes to `main` and pull requests do not trigger deployment.
+
+Create a release tag locally with:
+
+```bash
+git switch main
+git pull
+git tag -a v1.0.0 -m "Release v1.0.0"
+git push origin v1.0.0
+```
+
+Alternatively, create and publish a release from the GitHub **Releases** page and target the tag at `main`. Publishing the new tag starts the deployment workflow.
 
 - **Build and publish image** signs in to GitHub Container Registry (GHCR), builds once, and pushes lower-case image tags for both the commit SHA and `latest`.
 - **Deploy to staging** selects the `staging` environment and clearly prints the image a real hosting command would deploy. It is intentionally a placeholder, not a real deployment.
@@ -144,7 +155,8 @@ flowchart TD
     PR[Pull Request] --> Checks[Static Analysis + Unit Tests]
     Checks --> Verify[Build Verification]
     Verify --> Merge[Merge to main]
-    Merge --> Publish[Build and publish Docker image]
+    Merge --> Tag[Create version tag]
+    Tag --> Publish[Build and publish Docker image]
     Publish --> Staging[Deploy to staging]
     Staging --> Smoke[Staging smoke test]
     Smoke --> Approval[Production approval]
