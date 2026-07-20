@@ -1,0 +1,1 @@
+"""Materials Calculator application package."""

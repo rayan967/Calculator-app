@@ -1,0 +1,102 @@
+name: Continuous integration
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  static-analysis:
+    name: Static analysis
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+      - name: Install development dependencies
+        run: python -m pip install -r requirements-dev.txt
+      - name: Run Ruff lint checks
+        continue-on-error: true
+        run: ruff check .
+      - name: Check Ruff formatting
+        continue-on-error: true
+        run: ruff format --check .
+      - name: Run mypy type checks
+        continue-on-error: true
+        run: mypy src
+      - name: Run Bandit security checks
+        continue-on-error: true
+        run: bandit -c pyproject.toml -r src
+      - name: Run Flake8 style checks
+        continue-on-error: true
+        run: flake8 src tests
+      - name: Run Pylint checks
+        continue-on-error: true
+        run: pylint src
+
+  unit-tests:
+    name: Unit tests
+    needs: static-analysis
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+      - name: Install development dependencies
+        run: python -m pip install -r requirements-dev.txt
+      - name: Run unit and smoke tests
+        run: pytest
+
+  build:
+    name: Build verification
+    needs: [static-analysis, unit-tests]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Install application dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Compile Python source
+        run: python -m compileall src
+      - name: Verify application import
+        run: python -c "import src.app"
+      - name: Build Docker image
+        run: docker build --tag materials-calculator:ci .
+      - name: Start Docker container
+        run: docker run --detach --name materials-calculator-ci --publish 8501:8501 materials-calculator:ci
+      - name: Wait for Streamlit health endpoint
+        run: |
+          for attempt in {1..30}; do
+            if curl --fail --silent http://localhost:8501/_stcore/health > /dev/null; then
+              exit 0
+            fi
+            echo "Waiting for Streamlit (attempt ${attempt}/30)..."
+            sleep 2
+          done
+          docker logs materials-calculator-ci
+          exit 1
+      - name: Verify application response
+        run: curl --fail --show-error http://localhost:8501/
+      - name: Stop Docker container
+        if: always()
+        run: docker rm --force materials-calculator-ci
